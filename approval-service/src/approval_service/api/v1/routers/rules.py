@@ -3,7 +3,7 @@ from __future__ import annotations
 import datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 
 from approval_service.api.middleware.workspace import get_workspace_id
 from approval_service.api.v1.schemas.common import (
@@ -139,10 +139,11 @@ async def update_rule(
     )
 
 
-@router.delete("/{rule_id}", status_code=204)
+@router.delete("/{rule_id}", status_code=204, response_class=Response)
 async def delete_rule(
     rule_id: UUID,
     workspace_id: UUID = Depends(get_workspace_id),
     service: RuleService = Depends(get_rule_service),
-) -> None:
+) -> Response:
     await service.deactivate_rule(rule_id, workspace_id)
+    return Response(status_code=204)
