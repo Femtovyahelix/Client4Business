@@ -80,7 +80,10 @@ class ApprovalService:
         try:
             request_model = await self._approval_repo.create_request(request_model)
         except Exception as exc:
-            if "ix_approval_requests_unique_active" in str(exc):
+            exc_str = str(exc).lower()
+            if "ix_approval_requests_unique_active" in exc_str or (
+                "unique constraint failed" in exc_str and "external_resource_id" in exc_str
+            ):
                 raise DuplicateActiveRequestError() from exc
             raise
 

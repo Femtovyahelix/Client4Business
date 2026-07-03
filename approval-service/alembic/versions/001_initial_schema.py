@@ -5,16 +5,18 @@ Revises:
 Create Date: 2025-01-15
 
 """
-from typing import Sequence, Union
 
-from alembic import op
+from collections.abc import Sequence
+
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
+from alembic import op
+
 revision: str = "001"
-down_revision: Union[str, None] = None
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = None
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -64,9 +66,7 @@ def upgrade() -> None:
             server_default=sa.text("now()"),
             nullable=False,
         ),
-        sa.ForeignKeyConstraint(
-            ["workspace_id"], ["workspaces.id"], ondelete="RESTRICT"
-        ),
+        sa.ForeignKeyConstraint(["workspace_id"], ["workspaces.id"], ondelete="RESTRICT"),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(
@@ -113,12 +113,8 @@ def upgrade() -> None:
             "status IN ('pending','in_review','approved','rejected','cancelled')",
             name="ck_approval_requests_status",
         ),
-        sa.ForeignKeyConstraint(
-            ["workspace_id"], ["workspaces.id"], ondelete="RESTRICT"
-        ),
-        sa.ForeignKeyConstraint(
-            ["rule_id"], ["approval_rules.id"], ondelete="RESTRICT"
-        ),
+        sa.ForeignKeyConstraint(["workspace_id"], ["workspaces.id"], ondelete="RESTRICT"),
+        sa.ForeignKeyConstraint(["rule_id"], ["approval_rules.id"], ondelete="RESTRICT"),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(
@@ -167,13 +163,9 @@ def upgrade() -> None:
             server_default=sa.text("now()"),
             nullable=False,
         ),
-        sa.ForeignKeyConstraint(
-            ["request_id"], ["approval_requests.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["request_id"], ["approval_requests.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint(
-            "request_id", "step_order", name="uq_approval_steps_request_order"
-        ),
+        sa.UniqueConstraint("request_id", "step_order", name="uq_approval_steps_request_order"),
     )
     op.create_index(
         "ix_approval_steps_request",
@@ -195,13 +187,9 @@ def upgrade() -> None:
             server_default=sa.text("now()"),
             nullable=False,
         ),
-        sa.ForeignKeyConstraint(
-            ["step_id"], ["approval_steps.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["step_id"], ["approval_steps.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint(
-            "step_id", "actor_id", name="uq_approval_decisions_step_actor"
-        ),
+        sa.UniqueConstraint("step_id", "actor_id", name="uq_approval_decisions_step_actor"),
     )
 
     op.create_table(
@@ -274,9 +262,7 @@ def upgrade() -> None:
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.PrimaryKeyConstraint("key"),
     )
-    op.create_index(
-        "ix_idempotency_keys_expires", "idempotency_keys", ["expires_at"]
-    )
+    op.create_index("ix_idempotency_keys_expires", "idempotency_keys", ["expires_at"])
 
     op.create_table(
         "outbox",
