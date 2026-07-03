@@ -4,14 +4,14 @@ import datetime
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, ConfigDict
 
 from approval_service.api.middleware.workspace import get_workspace_id
+from approval_service.api.v1.response import build_response_meta
 from approval_service.api.v1.schemas.common import (
     ListResponse,
     PaginationInfo,
-    ResponseMeta,
 )
 from approval_service.application.services.audit_service import AuditService
 from approval_service.dependencies import get_audit_service
@@ -35,6 +35,7 @@ class AuditEntryResponse(BaseModel):
 
 @router.get("")
 async def list_audit_entries(
+    request: Request,
     workspace_id: UUID = Depends(get_workspace_id),
     service: AuditService = Depends(get_audit_service),
     entity_type: str | None = Query(default=None),
@@ -53,10 +54,7 @@ async def list_audit_entries(
     )
     return ListResponse(
         data=[AuditEntryResponse.model_validate(i) for i in items],
-        meta=ResponseMeta(
-            request_id="",
-            timestamp=datetime.datetime.now(datetime.UTC),
-        ),
+        meta=build_response_meta(request),
         pagination=PaginationInfo(
             total=total,
             limit=limit,

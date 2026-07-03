@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -61,8 +61,6 @@ class ApprovalRepository:
             base = base.where(ApprovalRequestModel.resource_type == resource_type)
         if requester_id is not None:
             base = base.where(ApprovalRequestModel.requester_id == requester_id)
-
-        from sqlalchemy import func
 
         count_stmt = select(func.count()).select_from(base.subquery())
         count_result = await self._session.execute(count_stmt)

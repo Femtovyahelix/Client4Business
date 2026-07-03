@@ -42,9 +42,12 @@ class SelfApprovalError(DomainError):
 class StepNotActiveError(DomainError):
     error_code = "STEP_NOT_ACTIVE"
 
-    def __init__(self, *, step_id: UUID, current_status: str) -> None:
+    def __init__(self, *, step_id: UUID, current_status: str | object) -> None:
         self.safe_message = "The targeted approval step is not currently active."
-        super().__init__(details={"step_id": str(step_id), "current_status": current_status})
+        status_str = (
+            current_status.value if hasattr(current_status, "value") else str(current_status)
+        )
+        super().__init__(details={"step_id": str(step_id), "current_status": status_str})
 
 
 class DuplicateDecisionError(DomainError):

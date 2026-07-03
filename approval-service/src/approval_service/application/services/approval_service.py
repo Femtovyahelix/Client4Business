@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID, uuid4
 
+from sqlalchemy.exc import IntegrityError
+
 from approval_service.application.dto import CreateDecisionDTO, CreateRequestDTO
 from approval_service.application.interfaces import OutboxWriter
 from approval_service.application.services.audit_service import AuditService
@@ -40,6 +42,13 @@ from approval_service.infrastructure.repositories.rule_repo import RuleRepositor
 
 
 class ApprovalService:
+    """Orchestrates approval request lifecycle: creation, decisions, cancellation.
+
+    All mutations run within a single database transaction provided by the
+    caller (via dependency injection). Audit entries and outbox events are
+    written in the same transaction to guarantee consistency.
+    """
+
     def __init__(
         self,
         approval_repo: ApprovalRepository,
@@ -55,6 +64,7 @@ class ApprovalService:
         self._clock = clock
 
     async def create_request(self, dto: CreateRequestDTO) -> ApprovalRequestModel:
+        """Create an approval request, instantiate steps from the rule, and activate step 1."""
         if dto.rule_id is not None:
             rule = await self._rule_repo.get_by_id(dto.rule_id, dto.workspace_id)
         else:
@@ -79,7 +89,7 @@ class ApprovalService:
 
         try:
             request_model = await self._approval_repo.create_request(request_model)
-        except Exception as exc:
+        except IntegrityError as exc:
             exc_str = str(exc).lower()
             if "ix_approval_requests_unique_active" in exc_str or (
                 "unique constraint failed" in exc_str and "external_resource_id" in exc_str
@@ -158,9 +168,7 @@ class ApprovalService:
                 payload=event_to_payload(step_event),
             )
 
-        request_model = await self._approval_repo.get_request_by_id(request_id, dto.workspace_id)
-        assert request_model is not None
-        return request_model
+        return await self._reload_request(request_id, dto.workspace_id)
 
     async def get_request(self, request_id: UUID, workspace_id: UUID) -> ApprovalRequestModel:
         model = await self._approval_repo.get_request_by_id(request_id, workspace_id)
@@ -190,6 +198,7 @@ class ApprovalService:
     async def cancel_request(
         self, request_id: UUID, workspace_id: UUID, actor_id: UUID
     ) -> ApprovalRequestModel:
+        """Transition a pending/in-review request to cancelled state."""
         model = await self._approval_repo.get_request_by_id(request_id, workspace_id)
         if model is None:
             raise RequestNotFoundError()
@@ -227,32 +236,33 @@ class ApprovalService:
             payload=event_to_payload(event),
         )
 
-        model = await self._approval_repo.get_request_by_id(request_id, workspace_id)
-        assert model is not None
-        return model
+        return await self._reload_request(request_id, workspace_id)
 
     async def make_decision(self, dto: CreateDecisionDTO) -> ApprovalRequestModel:
+        """Record an approve/reject decision on the currently active step.
+
+        Advances to the next step on approval, or terminates the request
+        on rejection. Raises ``SelfApprovalError`` if the actor is the requester.
+        """
         model = await self._approval_repo.get_request_by_id(dto.request_id, dto.workspace_id)
         if model is None:
             raise RequestNotFoundError()
 
         domain_request = self._to_domain_request(model)
+        active_step = domain_request.get_active_step()
 
         decision_id = uuid4()
         now = self._clock.now()
         action_type = ActionType(dto.action)
         domain_decision = Decision(
             id=decision_id,
-            step_id=uuid4(),
+            step_id=active_step.id,
             workspace_id=dto.workspace_id,
             actor_id=dto.actor_id,
             action=action_type,
             comment=dto.comment,
             created_at=now,
         )
-
-        active_step = domain_request._get_active_step()
-        domain_decision.step_id = active_step.id
 
         old_request_status = domain_request.status.value
         status_change = domain_request.record_decision(domain_decision, now)
@@ -353,9 +363,7 @@ class ApprovalService:
                 payload=event_to_payload(step_event),
             )
 
-        result = await self._approval_repo.get_request_by_id(dto.request_id, dto.workspace_id)
-        assert result is not None
-        return result
+        return await self._reload_request(dto.request_id, dto.workspace_id)
 
     async def get_decisions(
         self, request_id: UUID, workspace_id: UUID
@@ -364,6 +372,15 @@ class ApprovalService:
         if model is None:
             raise RequestNotFoundError()
         return await self._approval_repo.get_decisions_by_request(request_id, workspace_id)
+
+    async def _reload_request(
+        self, request_id: UUID, workspace_id: UUID
+    ) -> ApprovalRequestModel:
+        """Re-fetch the request with eager-loaded relations after mutation."""
+        model = await self._approval_repo.get_request_by_id(request_id, workspace_id)
+        if model is None:
+            raise RequestNotFoundError()
+        return model
 
     def _to_domain_request(self, model: ApprovalRequestModel) -> ApprovalRequest:
         steps: list[ApprovalStep] = []

@@ -24,8 +24,12 @@ class ApprovalRule:
     is_active: bool = True
     version: int = 1
     description: str = ""
-    created_at: datetime.datetime = field(default_factory=datetime.datetime.now)
-    updated_at: datetime.datetime = field(default_factory=datetime.datetime.now)
+    created_at: datetime.datetime = field(
+        default_factory=lambda: datetime.datetime.now(datetime.UTC),
+    )
+    updated_at: datetime.datetime = field(
+        default_factory=lambda: datetime.datetime.now(datetime.UTC),
+    )
 
     def matches(self, resource_type: str, payload: dict[str, Any]) -> bool:
         if self.resource_type != resource_type:

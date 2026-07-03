@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-import datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 
 from approval_service.api.middleware.workspace import get_workspace_id
+from approval_service.api.v1.response import build_response_meta
 from approval_service.api.v1.schemas.common import (
     ListResponse,
     PaginationInfo,
-    ResponseMeta,
     SingleResponse,
 )
 from approval_service.api.v1.schemas.requests import (
@@ -26,6 +25,7 @@ router = APIRouter(prefix="/requests", tags=["requests"])
 
 @router.post("", status_code=201)
 async def create_request(
+    request: Request,
     body: CreateRequestBody,
     workspace_id: UUID = Depends(get_workspace_id),
     service: ApprovalService = Depends(get_approval_service),
@@ -42,15 +42,13 @@ async def create_request(
     model = await service.create_request(dto)
     return SingleResponse(
         data=RequestResponse.model_validate(model),
-        meta=ResponseMeta(
-            request_id="",
-            timestamp=datetime.datetime.now(datetime.UTC),
-        ),
+        meta=build_response_meta(request),
     )
 
 
 @router.get("")
 async def list_requests(
+    request: Request,
     workspace_id: UUID = Depends(get_workspace_id),
     service: ApprovalService = Depends(get_approval_service),
     status: str | None = Query(default=None),
@@ -69,10 +67,7 @@ async def list_requests(
     )
     return ListResponse(
         data=[RequestResponse.model_validate(i) for i in items],
-        meta=ResponseMeta(
-            request_id="",
-            timestamp=datetime.datetime.now(datetime.UTC),
-        ),
+        meta=build_response_meta(request),
         pagination=PaginationInfo(
             total=total,
             limit=limit,
@@ -84,6 +79,7 @@ async def list_requests(
 
 @router.get("/{request_id}")
 async def get_request(
+    request: Request,
     request_id: UUID,
     workspace_id: UUID = Depends(get_workspace_id),
     service: ApprovalService = Depends(get_approval_service),
@@ -91,15 +87,13 @@ async def get_request(
     model = await service.get_request(request_id, workspace_id)
     return SingleResponse(
         data=RequestResponse.model_validate(model),
-        meta=ResponseMeta(
-            request_id="",
-            timestamp=datetime.datetime.now(datetime.UTC),
-        ),
+        meta=build_response_meta(request),
     )
 
 
 @router.post("/{request_id}/cancel")
 async def cancel_request(
+    request: Request,
     request_id: UUID,
     body: CancelRequestBody,
     workspace_id: UUID = Depends(get_workspace_id),
@@ -108,8 +102,5 @@ async def cancel_request(
     model = await service.cancel_request(request_id, workspace_id, body.actor_id)
     return SingleResponse(
         data=RequestResponse.model_validate(model),
-        meta=ResponseMeta(
-            request_id="",
-            timestamp=datetime.datetime.now(datetime.UTC),
-        ),
+        meta=build_response_meta(request),
     )

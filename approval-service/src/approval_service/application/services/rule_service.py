@@ -13,6 +13,8 @@ from approval_service.infrastructure.repositories.rule_repo import RuleRepositor
 
 
 class RuleService:
+    """CRUD operations for approval rules with audit trail and outbox events."""
+
     def __init__(
         self,
         repo: RuleRepository,
