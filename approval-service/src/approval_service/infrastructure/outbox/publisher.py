@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import datetime
 import logging
+from dataclasses import dataclass
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -15,6 +16,11 @@ logger = logging.getLogger(__name__)
 
 
 class LoggingEventPublisher(EventPublisher):
+    """Publishes events to structured logs.
+
+    Suitable for development and as a base implementation.
+    """
+
     async def publish(self, event: DomainEvent) -> None:
         logger.info(
             "Publishing event",
@@ -23,6 +29,12 @@ class LoggingEventPublisher(EventPublisher):
 
 
 class OutboxPoller:
+    """Background worker that reads unpublished outbox entries and forwards them.
+
+    Uses SELECT ... FOR UPDATE SKIP LOCKED for safe concurrent polling.
+    Failed entries are retried up to ``max_retries`` times before being dead-lettered.
+    """
+
     def __init__(
         self,
         session_factory: async_sessionmaker[AsyncSession],
@@ -73,16 +85,13 @@ class OutboxPoller:
 
             for entry in entries:
                 try:
-                    event = DomainEvent(
-                        event_id=entry.aggregate_id,
-                        timestamp=entry.created_at,
-                    )
+                    event = self._to_domain_event(entry)
                     await self._publisher.publish(event)
                     published_ids.append(entry.id)
                 except Exception:
                     logger.exception(
                         "Failed to publish outbox entry",
-                        extra={"outbox_id": entry.id},
+                        extra={"outbox_id": entry.id, "event_type": entry.event_type},
                     )
                     failed_ids.append(entry.id)
 
@@ -101,3 +110,23 @@ class OutboxPoller:
                 )
 
             return True
+
+    @staticmethod
+    def _to_domain_event(entry: OutboxModel) -> DomainEvent:
+        """Reconstruct a DomainEvent from an outbox row, preserving event_type."""
+        return _OutboxDomainEvent(
+            event_id=entry.aggregate_id,
+            timestamp=entry.created_at,
+            _event_type=entry.event_type,
+        )
+
+
+@dataclass(frozen=True)
+class _OutboxDomainEvent(DomainEvent):
+    """Thin wrapper so the publisher receives the original event_type from the outbox row."""
+
+    _event_type: str = ""
+
+    @property
+    def event_type(self) -> str:
+        return self._event_type

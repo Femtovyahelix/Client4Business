@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import logging
 from typing import Any
 from uuid import UUID
 
@@ -13,8 +14,18 @@ from starlette.responses import JSONResponse
 
 from approval_service.infrastructure.database.models.idempotency_key import IdempotencyKeyModel
 
+logger = logging.getLogger(__name__)
+
 
 class IdempotencyMiddleware(BaseHTTPMiddleware):
+    """Ensures POST idempotency via Idempotency-Key header.
+
+    First request: acquires advisory lock, stores key with is_processing=True,
+    forwards to handler, then caches the response.
+    Replay: returns cached response without touching the service layer.
+    On handler failure: cleans up the key so the client can safely retry.
+    """
+
     def __init__(
         self,
         app: Any,
@@ -103,7 +114,11 @@ class IdempotencyMiddleware(BaseHTTPMiddleware):
             )
             session.add(key_model)
 
-        response = await call_next(request)
+        try:
+            response = await call_next(request)
+        except Exception:
+            await self._cleanup_processing_key(idempotency_key, workspace_id)
+            raise
 
         response_body = b""
         async for chunk in response.body_iterator:  # type: ignore[attr-defined]
@@ -111,6 +126,15 @@ class IdempotencyMiddleware(BaseHTTPMiddleware):
                 response_body += chunk.encode()
             else:
                 response_body += chunk
+
+        if response.status_code >= 500:
+            await self._cleanup_processing_key(idempotency_key, workspace_id)
+            return Response(
+                content=response_body,
+                status_code=response.status_code,
+                headers=dict(response.headers),
+                media_type=response.media_type,
+            )
 
         try:
             parsed_body: dict[str, Any] = json.loads(response_body)
@@ -135,6 +159,24 @@ class IdempotencyMiddleware(BaseHTTPMiddleware):
             headers=dict(response.headers),
             media_type=response.media_type,
         )
+
+    async def _cleanup_processing_key(
+        self, idempotency_key: str, workspace_id: UUID
+    ) -> None:
+        """Remove a key stuck in is_processing=True after a handler failure."""
+        try:
+            async with self._session_factory() as session, session.begin():
+                stmt = delete(IdempotencyKeyModel).where(
+                    IdempotencyKeyModel.key == idempotency_key,
+                    IdempotencyKeyModel.workspace_id == workspace_id,
+                    IdempotencyKeyModel.is_processing.is_(True),
+                )
+                await session.execute(stmt)
+        except Exception:
+            logger.exception(
+                "Failed to clean up idempotency key after handler error",
+                extra={"idempotency_key": idempotency_key},
+            )
 
     async def _get_existing_key(
         self,

@@ -19,11 +19,15 @@ class Decision:
     actor_id: UUID
     action: ActionType
     comment: str
-    created_at: datetime.datetime = field(default_factory=datetime.datetime.now)
+    created_at: datetime.datetime = field(
+        default_factory=lambda: datetime.datetime.now(datetime.UTC),
+    )
 
 
 @dataclass
 class ApprovalStep:
+    """A single approval step within a request's workflow chain."""
+
     id: UUID
     request_id: UUID
     workspace_id: UUID
@@ -34,7 +38,9 @@ class ApprovalStep:
     status: StepStatus = StepStatus.PENDING
     activated_at: datetime.datetime | None = None
     completed_at: datetime.datetime | None = None
-    created_at: datetime.datetime = field(default_factory=datetime.datetime.now)
+    created_at: datetime.datetime = field(
+        default_factory=lambda: datetime.datetime.now(datetime.UTC),
+    )
     decisions: list[Decision] = field(default_factory=list)
 
     def activate(self, now: datetime.datetime) -> None:
@@ -46,6 +52,7 @@ class ApprovalStep:
         decision: Decision,
         now: datetime.datetime,
     ) -> None:
+        """Record a decision, updating counts and completing the step if threshold is met."""
         if self.status != StepStatus.ACTIVE:
             raise StepNotActiveError(step_id=self.id, current_status=self.status)
         existing_actor_ids = {d.actor_id for d in self.decisions}

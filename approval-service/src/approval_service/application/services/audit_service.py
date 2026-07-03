@@ -8,6 +8,12 @@ from approval_service.infrastructure.repositories.audit_repo import AuditReposit
 
 
 class AuditService:
+    """Append-only audit trail writer.
+
+    Each entry captures entity_type, action, actor, and before/after state
+    snapshots as JSONB. Written in the same transaction as the mutation.
+    """
+
     def __init__(self, repo: AuditRepository) -> None:
         self._repo = repo
 

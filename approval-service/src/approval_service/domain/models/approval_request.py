@@ -25,6 +25,12 @@ TERMINAL_STATUSES = frozenset(
 
 @dataclass
 class ApprovalRequest:
+    """Aggregate root for an approval workflow instance.
+
+    Encapsulates the FSM transitions and step progression logic.
+    All state mutations go through methods that enforce invariants.
+    """
+
     id: UUID
     workspace_id: UUID
     rule_id: UUID
@@ -35,8 +41,12 @@ class ApprovalRequest:
     requester_id: UUID
     status: RequestStatus = RequestStatus.PENDING
     resolved_at: datetime.datetime | None = None
-    created_at: datetime.datetime = field(default_factory=datetime.datetime.now)
-    updated_at: datetime.datetime = field(default_factory=datetime.datetime.now)
+    created_at: datetime.datetime = field(
+        default_factory=lambda: datetime.datetime.now(datetime.UTC),
+    )
+    updated_at: datetime.datetime = field(
+        default_factory=lambda: datetime.datetime.now(datetime.UTC),
+    )
     steps: list[ApprovalStep] = field(default_factory=list)
 
     @property
@@ -44,6 +54,7 @@ class ApprovalRequest:
         return self.status in TERMINAL_STATUSES
 
     def transition_to(self, target: RequestStatus, now: datetime.datetime) -> RequestStatus:
+        """Validate and apply an FSM transition. Returns the previous status."""
         if self.is_terminal:
             raise AlreadyResolvedError()
         allowed = ALLOWED_TRANSITIONS.get(self.status, frozenset())
@@ -71,10 +82,14 @@ class ApprovalRequest:
         decision: Decision,
         now: datetime.datetime,
     ) -> RequestStatus | None:
+        """Apply a decision to the active step and advance the workflow.
+
+        Returns the old status if a terminal transition occurred, None otherwise.
+        """
         if decision.actor_id == self.requester_id:
             raise SelfApprovalError()
 
-        active_step = self._get_active_step()
+        active_step = self.get_active_step()
         active_step.record_decision(decision, now)
 
         if active_step.status == StepStatus.REJECTED:
@@ -91,7 +106,8 @@ class ApprovalRequest:
 
         return None
 
-    def _get_active_step(self) -> ApprovalStep:
+    def get_active_step(self) -> ApprovalStep:
+        """Return the currently active step, or raise if none exists."""
         for step in self.steps:
             if step.status == StepStatus.ACTIVE:
                 return step
@@ -101,6 +117,7 @@ class ApprovalRequest:
         )
 
     def _get_step_by_order(self, order: int) -> ApprovalStep | None:
+        """Find a step by its ordinal position."""
         for step in self.steps:
             if step.step_order == order:
                 return step

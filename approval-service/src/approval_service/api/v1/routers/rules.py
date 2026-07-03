@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-import datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 
 from approval_service.api.middleware.workspace import get_workspace_id
+from approval_service.api.v1.response import build_response_meta
 from approval_service.api.v1.schemas.common import (
     ListResponse,
     PaginationInfo,
-    ResponseMeta,
     SingleResponse,
 )
 from approval_service.api.v1.schemas.rules import (
@@ -26,6 +25,7 @@ router = APIRouter(prefix="/rules", tags=["rules"])
 
 @router.post("", status_code=201)
 async def create_rule(
+    request: Request,
     body: CreateRuleBody,
     workspace_id: UUID = Depends(get_workspace_id),
     service: RuleService = Depends(get_rule_service),
@@ -48,15 +48,13 @@ async def create_rule(
     model = await service.create_rule(dto)
     return SingleResponse(
         data=RuleResponse.model_validate(model),
-        meta=ResponseMeta(
-            request_id="",
-            timestamp=datetime.datetime.now(datetime.UTC),
-        ),
+        meta=build_response_meta(request),
     )
 
 
 @router.get("")
 async def list_rules(
+    request: Request,
     workspace_id: UUID = Depends(get_workspace_id),
     service: RuleService = Depends(get_rule_service),
     resource_type: str | None = Query(default=None),
@@ -73,10 +71,7 @@ async def list_rules(
     )
     return ListResponse(
         data=[RuleResponse.model_validate(i) for i in items],
-        meta=ResponseMeta(
-            request_id="",
-            timestamp=datetime.datetime.now(datetime.UTC),
-        ),
+        meta=build_response_meta(request),
         pagination=PaginationInfo(
             total=total,
             limit=limit,
@@ -88,6 +83,7 @@ async def list_rules(
 
 @router.get("/{rule_id}")
 async def get_rule(
+    request: Request,
     rule_id: UUID,
     workspace_id: UUID = Depends(get_workspace_id),
     service: RuleService = Depends(get_rule_service),
@@ -95,15 +91,13 @@ async def get_rule(
     model = await service.get_rule(rule_id, workspace_id)
     return SingleResponse(
         data=RuleResponse.model_validate(model),
-        meta=ResponseMeta(
-            request_id="",
-            timestamp=datetime.datetime.now(datetime.UTC),
-        ),
+        meta=build_response_meta(request),
     )
 
 
 @router.put("/{rule_id}")
 async def update_rule(
+    request: Request,
     rule_id: UUID,
     body: UpdateRuleBody,
     workspace_id: UUID = Depends(get_workspace_id),
@@ -132,10 +126,7 @@ async def update_rule(
     model = await service.update_rule(dto)
     return SingleResponse(
         data=RuleResponse.model_validate(model),
-        meta=ResponseMeta(
-            request_id="",
-            timestamp=datetime.datetime.now(datetime.UTC),
-        ),
+        meta=build_response_meta(request),
     )
 
 
